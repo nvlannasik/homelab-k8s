@@ -1,0 +1,17 @@
+---
+loadbalancer_apiserver_localhost: true
+loadbalancer_apiserver_type: haproxy   # active /healthz checks; was nginx (see README 4.8)
+
+download_run_once: false
+download_localhost: false
+
+ubuntu_stop_unattended_upgrades: true
+
+
+# FOR PRIVATE REGISTRY URL CONFIG
+# registry_host: "harbor.homelab.local"
+# kube_image_repo: "{{ registry_host }}"
+# docker_image_repo: "{{ registry_host }}"
+# quay_image_repo: "{{ registry_host }}"
+# github_image_repo: "{{ registry_host }}"
+# gcr_image_repo: "{{ registry_host }}"

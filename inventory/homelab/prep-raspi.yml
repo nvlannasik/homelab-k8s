@@ -1,0 +1,34 @@
+---
+# Prepare the Raspberry Pi nodes (Ubuntu Server 24.04) before cluster.yml.
+# Run from the repository root:
+#   ansible-playbook -i inventory/homelab/inventory.ini inventory/homelab/prep-raspi.yml -b
+- name: Prepare Raspberry Pi nodes for Kubernetes
+  hosts: raspi
+  become: true
+  tasks:
+    - name: Install extra kernel modules (vxlan and others)
+      ansible.builtin.apt:
+        name: linux-modules-extra-raspi
+        state: present
+        update_cache: true
+      failed_when: false   # package name can differ per release; modprobe below is the real check
+
+    - name: Enable the memory cgroup in /boot/firmware/cmdline.txt
+      ansible.builtin.replace:
+        path: /boot/firmware/cmdline.txt
+        regexp: '^((?!.*cgroup_enable=memory).*\S)\s*$'
+        replace: '\1 cgroup_enable=memory cgroup_memory=1'
+      register: cmdline
+
+    - name: Reboot when cmdline.txt changed
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+      when: cmdline.changed
+
+    - name: Check that the vxlan module loads (required by Calico VXLAN)
+      ansible.builtin.command: modprobe vxlan
+      changed_when: false
+
+    - name: Check that the memory cgroup is active
+      ansible.builtin.command: grep -qw memory /sys/fs/cgroup/cgroup.controllers
+      changed_when: false

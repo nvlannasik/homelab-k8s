@@ -1,0 +1,45 @@
+---
+kube_version: 1.34.3
+
+container_manager: containerd
+kube_network_plugin: calico
+kube_proxy_mode: ipvs
+
+kube_service_addresses: 10.233.0.0/18
+kube_pods_subnet: 10.233.64.0/18
+
+cluster_name: cluster.local
+
+kubeconfig_localhost: true
+
+kube_vip_enabled: true
+kube_vip_controlplane_enabled: true
+kube_vip_arp_enabled: true
+kube_vip_address: 10.10.10.10
+kube_proxy_strict_arp: true
+supplementary_addresses_in_ssl_keys: [10.10.10.10]
+
+kube_vip_leaseduration: 15
+kube_vip_renewdeadline: 10
+kube_vip_retryperiod: 2
+
+auto_renew_certificates: true
+
+# MetalLB for Services of type LoadBalancer (layer2/ARP).
+# kube-vip keeps only the control plane VIP (kube_vip_services_enabled stays false), so the two
+# never answer ARP for the same IP. Requires kube_proxy_strict_arp: true (set above).
+# Pool must stay outside the router's DHCP range and must not overlap 10.10.10.10 or node IPs.
+metallb_enabled: true
+metallb_speaker_enabled: true
+metallb_config:
+  address_pools:
+    primary:
+      ip_range:
+        - 10.10.10.200/32
+      auto_assign: true
+  layer2:
+    - primary
+
+# local-path-provisioner: default StorageClass "local-path" (hostPath under
+# /opt/local-path-provisioner on the node that first mounts the PVC). Needed by Teleport's auth PVC.
+local_path_provisioner_enabled: true
