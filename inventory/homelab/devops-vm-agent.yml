@@ -18,7 +18,7 @@
     devops_vm_agent_token: "{{ lookup('ansible.builtin.password', devops_vm_agent_credentials ~ '/' ~ devops_vm_agent_name ~ devops_vm_agent_password_opts) }}"
   handlers:
     - name: Restart devops-vm-agent
-      ansible.builtin.systemd_service:
+      ansible.builtin.systemd:
         name: devops-vm-agent
         state: restarted
         daemon_reload: true
@@ -124,7 +124,7 @@
           notify: Restart devops-vm-agent
 
         - name: Enable and start devops-vm-agent
-          ansible.builtin.systemd_service:
+          ansible.builtin.systemd:
             name: devops-vm-agent
             enabled: true
             state: started
@@ -156,7 +156,7 @@
       when: devops_vm_agent_state == 'absent'
       block:
         - name: Stop and disable devops-vm-agent
-          ansible.builtin.systemd_service:
+          ansible.builtin.systemd:
             name: devops-vm-agent
             enabled: false
             state: stopped
@@ -172,5 +172,5 @@
             - /etc/devops-vm-agent.conf
 
         - name: Reload systemd
-          ansible.builtin.systemd_service:
+          ansible.builtin.systemd:
             daemon_reload: true
