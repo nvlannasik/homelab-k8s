@@ -12,6 +12,9 @@
     devops_vm_agent_credentials: "{{ inventory_dir }}/credentials/devops-vm-agent"
     devops_vm_agent_password_opts: " length=48 chars=ascii_letters,digits"
     # Generated once per node on the Ansible host, reused on every later run.
+    devops_vm_agent_kubectl_cmd: >-
+      {{ devops_vm_agent_kubectl }}{{ ' --kubeconfig ' ~ (devops_vm_agent_kubeconfig | quote) if devops_vm_agent_kubeconfig else '' }}{{
+      ' --context ' ~ (devops_vm_agent_kube_context | quote) if devops_vm_agent_kube_context else '' }}
     devops_vm_agent_token: "{{ lookup('ansible.builtin.password', devops_vm_agent_credentials ~ '/' ~ devops_vm_agent_name ~ devops_vm_agent_password_opts) }}"
   handlers:
     - name: Restart devops-vm-agent
@@ -41,6 +44,10 @@
       delegate_to: localhost
       become: false
       block:
+        - name: Check kubectl reaches the cluster and namespace {{ devops_vm_agent_namespace }}
+          ansible.builtin.command: "{{ devops_vm_agent_kubectl_cmd }} get namespace {{ devops_vm_agent_namespace }} -o name"
+          changed_when: false
+
         - name: Create the credentials directory
           ansible.builtin.file:
             path: "{{ devops_vm_agent_credentials }}"
@@ -61,11 +68,11 @@
         - name: Apply the agent's tokens Secret
           ansible.builtin.shell: |
             set -o pipefail
-            {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} \
+            {{ devops_vm_agent_kubectl_cmd }} \
               -n {{ devops_vm_agent_namespace }} create secret generic {{ devops_vm_agent_secret }} \
               --from-file=VM_AGENT_TOKENS={{ (devops_vm_agent_credentials ~ '/VM_AGENT_TOKENS') | quote }} \
               --dry-run=client -o yaml \
-            | {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} apply -f -
+            | {{ devops_vm_agent_kubectl_cmd }} apply -f -
           args:
             executable: /bin/bash
           register: devops_vm_agent_secret_apply
@@ -76,9 +83,9 @@
         - name: Restart the agent so it reads the new tokens  # noqa: no-handler
           when: devops_vm_agent_secret_apply is changed
           ansible.builtin.shell: |
-            {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} \
+            {{ devops_vm_agent_kubectl_cmd }} \
               -n {{ devops_vm_agent_namespace }} rollout restart deploy/{{ devops_vm_agent_deployment }}
-            {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} \
+            {{ devops_vm_agent_kubectl_cmd }} \
               -n {{ devops_vm_agent_namespace }} rollout status deploy/{{ devops_vm_agent_deployment }} --timeout=300s
           changed_when: true
 

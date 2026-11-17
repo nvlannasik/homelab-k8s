@@ -29,7 +29,10 @@ devops_vm_agent_units: []
 # owns that Secret (it overwrites it) and restarts the agent when it changes.
 devops_vm_agent_manage_secret: true
 devops_vm_agent_kubectl: kubectl
-devops_vm_agent_kubeconfig: "{{ inventory_dir }}/artifacts/admin.conf"
+# Empty = whatever kubectl uses on the Ansible host ($KUBECONFIG, else ~/.kube/config, current context).
+# Set a path (e.g. "{{ inventory_dir }}/artifacts/admin.conf") and/or a context to pin it.
+devops_vm_agent_kubeconfig: ""
+devops_vm_agent_kube_context: ""
 devops_vm_agent_namespace: devops-tools
 devops_vm_agent_secret: devops-vm-agent-tokens
 devops_vm_agent_deployment: devops-ai-agent

@@ -571,7 +571,8 @@ What the playbook does, in order:
 1. On the Ansible host, generates one 48-character token per node under
    `inventory/homelab/credentials/devops-vm-agent/<node>` (gitignored; reused on later runs) and
    writes `VM_AGENT_TOKENS` (`node=token,...`, **every** node of `k8s_cluster`, not only `--limit`).
-2. Applies Secret `devops-tools/devops-vm-agent-tokens` with `kubectl` and `artifacts/admin.conf`,
+2. Applies Secret `devops-tools/devops-vm-agent-tokens` with `kubectl` (its default kubeconfig and
+   context, or `devops_vm_agent_kubeconfig` / `devops_vm_agent_kube_context` when set),
    and, only when the Secret changed, restarts `deploy/devops-ai-agent` (it reads the tokens at
    boot). The playbook owns that Secret: a token added to it by hand is overwritten. Set
    `devops_vm_agent_manage_secret: false` to manage it yourself from the file above.
