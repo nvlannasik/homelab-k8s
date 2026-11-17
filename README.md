@@ -557,7 +557,7 @@ and its data go with `teleport-cluster`).
 
 [`devops-vm-agent`](https://github.com/nvlannasik/devops-ai-agent/tree/main/vm-agent) is the devops
 AI agent's host-side companion: a Python (standard library) systemd service that calls out to
-`https://agent.annasik.cloud/vm/` with its own bearer token (heartbeat every minute, claims an
+`http://10.10.10.200/vm/` (ingress-nginx's MetalLB IP, so it stays on the LAN) with its own bearer token (heartbeat every minute, claims an
 approved action every 10 s). Nothing connects to the node. It runs on the host rather than as a
 DaemonSet so it keeps reporting when kubelet or the container runtime on that node is broken.
 
@@ -580,7 +580,7 @@ What the playbook does, in order:
    checks (`devops_vm_agent_commit`, `devops_vm_agent_sha256`), writes `/etc/devops-vm-agent.conf`
    (0600) and starts the service.
 4. Waits one poll and fails the node if the journal says `central endpoint unreachable` (wrong
-   token, the agent pod not up yet, or no route to `agent.annasik.cloud`).
+   token, the agent pod not up yet, or no route to `10.10.10.200`).
 
 The node name sent to the agent is the inventory name, which is also the Kubernetes node name.
 The restart allowlist `devops_vm_agent_units` is **empty**: the agent refuses a restart on a

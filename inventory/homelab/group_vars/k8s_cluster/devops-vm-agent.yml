@@ -15,7 +15,10 @@ devops_vm_agent_sha256:
 
 # The name IS the node's identity at the agent and must equal its Kubernetes node name.
 devops_vm_agent_name: "{{ inventory_hostname }}"
-devops_vm_agent_url: https://agent.annasik.cloud
+# The LAN, not the public host: ingress-nginx's MetalLB IP, where a host-less /vm/ rule
+# (gitops-devops-ai-manifest ingress-vm.yaml) reaches the agent without Cloudflare. Plain HTTP: the
+# token is unencrypted on the LAN (https on that IP serves ingress-nginx's fake certificate).
+devops_vm_agent_url: http://10.10.10.200
 devops_vm_agent_poll_seconds: 10
 
 # Units the agent may ask this node to restart. Empty on purpose: the agent refuses a restart on a
