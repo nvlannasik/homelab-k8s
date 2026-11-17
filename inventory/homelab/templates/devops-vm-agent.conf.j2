@@ -1,0 +1,7 @@
+# Managed by homelab-k8s inventory/homelab/devops-vm-agent.yml — local edits are overwritten.
+[agent]
+name = {{ devops_vm_agent_name }}
+url = {{ devops_vm_agent_url }}
+token = {{ devops_vm_agent_token }}
+units = {{ devops_vm_agent_units | join(' ') }}
+poll_seconds = {{ devops_vm_agent_poll_seconds }}

@@ -1,0 +1,169 @@
+---
+# Install (or upgrade, or remove) devops-vm-agent on every Kubernetes node.
+# Variables: group_vars/k8s_cluster/devops-vm-agent.yml. Run from the kubespray directory:
+#   ansible-playbook -i $INV ../inventory/homelab/devops-vm-agent.yml -b
+#   ansible-playbook -i $INV ../inventory/homelab/devops-vm-agent.yml -b --limit master3-vm
+#   ansible-playbook -i $INV ../inventory/homelab/devops-vm-agent.yml -b -e devops_vm_agent_state=absent
+- name: Install devops-vm-agent on every node
+  hosts: k8s_cluster
+  become: true
+  vars:
+    devops_vm_agent_raw: "https://raw.githubusercontent.com/nvlannasik/devops-ai-agent/{{ devops_vm_agent_commit }}/vm-agent"
+    devops_vm_agent_credentials: "{{ inventory_dir }}/credentials/devops-vm-agent"
+    devops_vm_agent_password_opts: " length=48 chars=ascii_letters,digits"
+    # Generated once per node on the Ansible host, reused on every later run.
+    devops_vm_agent_token: "{{ lookup('ansible.builtin.password', devops_vm_agent_credentials ~ '/' ~ devops_vm_agent_name ~ devops_vm_agent_password_opts) }}"
+  handlers:
+    - name: Restart devops-vm-agent
+      ansible.builtin.systemd_service:
+        name: devops-vm-agent
+        state: restarted
+        daemon_reload: true
+
+  tasks:
+    - name: Check the node name is one the agent accepts
+      ansible.builtin.assert:
+        that: devops_vm_agent_name is match('^[a-z0-9][a-z0-9.-]*$')
+        fail_msg: "{{ devops_vm_agent_name }}: lowercase letters, digits, . and - only (the agent's VM_AGENT_TOKENS rule)"
+        quiet: true
+
+    - name: Refuse etcd in the restart allowlist
+      ansible.builtin.assert:
+        that: "'etcd.service' not in devops_vm_agent_units"
+        fail_msg: etcd.service must never be restartable by the agent
+        quiet: true
+
+    # --- the agent's Secret, written from the Ansible host before any node starts -------------------
+    # run_once: this play keeps the default linear strategy, where it means one run for the batch.
+    - name: Secret for the agent  # noqa: run-once[task]
+      when: devops_vm_agent_manage_secret and devops_vm_agent_state == 'present'
+      run_once: true
+      delegate_to: localhost
+      become: false
+      block:
+        - name: Create the credentials directory
+          ansible.builtin.file:
+            path: "{{ devops_vm_agent_credentials }}"
+            state: directory
+            mode: "0700"
+
+        # Every node of k8s_cluster, not only the --limit ones: the Secret is replaced as a whole.
+        - name: Write VM_AGENT_TOKENS (name=token for every node)
+          no_log: true
+          ansible.builtin.copy:
+            dest: "{{ devops_vm_agent_credentials }}/VM_AGENT_TOKENS"
+            mode: "0600"
+            content: >-
+              {% for h in groups['k8s_cluster'] %}{% set n = hostvars[h].devops_vm_agent_name %}{{ n }}={{
+              lookup('ansible.builtin.password', devops_vm_agent_credentials ~ '/' ~ n ~ devops_vm_agent_password_opts)
+              }}{{ ',' if not loop.last else '' }}{% endfor %}
+
+        - name: Apply the agent's tokens Secret
+          ansible.builtin.shell: |
+            set -o pipefail
+            {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} \
+              -n {{ devops_vm_agent_namespace }} create secret generic {{ devops_vm_agent_secret }} \
+              --from-file=VM_AGENT_TOKENS={{ (devops_vm_agent_credentials ~ '/VM_AGENT_TOKENS') | quote }} \
+              --dry-run=client -o yaml \
+            | {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} apply -f -
+          args:
+            executable: /bin/bash
+          register: devops_vm_agent_secret_apply
+          changed_when: "'unchanged' not in devops_vm_agent_secret_apply.stdout"
+
+        # The agent reads VM_AGENT_TOKENS from its environment at boot, so a new token needs a new pod.
+        # A task, not a handler: it must finish before any node starts and checks its heartbeat.
+        - name: Restart the agent so it reads the new tokens  # noqa: no-handler
+          when: devops_vm_agent_secret_apply is changed
+          ansible.builtin.shell: |
+            {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} \
+              -n {{ devops_vm_agent_namespace }} rollout restart deploy/{{ devops_vm_agent_deployment }}
+            {{ devops_vm_agent_kubectl }} --kubeconfig {{ devops_vm_agent_kubeconfig | quote }} \
+              -n {{ devops_vm_agent_namespace }} rollout status deploy/{{ devops_vm_agent_deployment }} --timeout=300s
+          changed_when: true
+
+    # --- the node ----------------------------------------------------------------------------------
+    - name: Install
+      when: devops_vm_agent_state == 'present'
+      block:
+        - name: Download the script (pinned commit, checksum verified)
+          ansible.builtin.get_url:
+            url: "{{ devops_vm_agent_raw }}/devops-vm-agent.py"
+            dest: /usr/local/bin/devops-vm-agent.py
+            checksum: "sha256:{{ devops_vm_agent_sha256['devops-vm-agent.py'] }}"
+            owner: root
+            group: root
+            mode: "0755"
+          notify: Restart devops-vm-agent
+
+        - name: Download the systemd unit (pinned commit, checksum verified)
+          ansible.builtin.get_url:
+            url: "{{ devops_vm_agent_raw }}/devops-vm-agent.service"
+            dest: /etc/systemd/system/devops-vm-agent.service
+            checksum: "sha256:{{ devops_vm_agent_sha256['devops-vm-agent.service'] }}"
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Restart devops-vm-agent
+
+        - name: Write /etc/devops-vm-agent.conf
+          no_log: true
+          ansible.builtin.template:
+            src: devops-vm-agent.conf.j2
+            dest: /etc/devops-vm-agent.conf
+            owner: root
+            group: root
+            mode: "0600"
+          notify: Restart devops-vm-agent
+
+        - name: Enable and start devops-vm-agent
+          ansible.builtin.systemd_service:
+            name: devops-vm-agent
+            enabled: true
+            state: started
+            daemon_reload: true
+
+        - name: Apply pending restarts now
+          ansible.builtin.meta: flush_handlers
+
+        # A heartbeat goes out right after start and the first claim one poll later; a wrong token
+        # or an unreachable agent shows up in the journal as "central endpoint unreachable".
+        - name: Give the agent one poll to answer
+          ansible.builtin.wait_for:
+            timeout: "{{ devops_vm_agent_poll_seconds + 5 }}"
+
+        - name: Read the agent's recent log
+          ansible.builtin.command: journalctl -u devops-vm-agent --since "-{{ devops_vm_agent_poll_seconds + 5 }}s" --no-pager -o cat
+          register: devops_vm_agent_journal
+          changed_when: false
+
+        - name: Check the central agent accepted this node
+          ansible.builtin.assert:
+            that:
+              - "'central endpoint unreachable' not in devops_vm_agent_journal.stdout"
+              - "'missing' not in devops_vm_agent_journal.stdout"
+            fail_msg: "{{ devops_vm_agent_journal.stdout_lines | last | default('no log') }}"
+            success_msg: "{{ devops_vm_agent_name }} registered with {{ devops_vm_agent_url }}"
+
+    - name: Remove
+      when: devops_vm_agent_state == 'absent'
+      block:
+        - name: Stop and disable devops-vm-agent
+          ansible.builtin.systemd_service:
+            name: devops-vm-agent
+            enabled: false
+            state: stopped
+          failed_when: false
+
+        - name: Remove its files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /usr/local/bin/devops-vm-agent.py
+            - /etc/systemd/system/devops-vm-agent.service
+            - /etc/devops-vm-agent.conf
+
+        - name: Reload systemd
+          ansible.builtin.systemd_service:
+            daemon_reload: true

@@ -1,0 +1,35 @@
+---
+# devops-vm-agent on every node (playbook: inventory/homelab/devops-vm-agent.yml).
+# The node pulls from the devops agent; nothing connects to it. Agent repo:
+# https://github.com/nvlannasik/devops-ai-agent/tree/main/vm-agent
+
+# present | absent (absent stops the service and removes the script, unit and config)
+devops_vm_agent_state: present
+
+# Pinned to one commit of devops-ai-agent; the checksums make a changed file fail the download.
+# To upgrade: set the new commit and both sha256 values (git show <commit>:vm-agent/<file> | sha256sum).
+devops_vm_agent_commit: bce62229e331b906f737b396c0edcdb113d9db0c
+devops_vm_agent_sha256:
+  devops-vm-agent.py: f0f389dce2efc4f0d94acf6ede7dfc74e806c034360b21ba408017f014f74c1a
+  devops-vm-agent.service: 2afc04911b9d462090c40b8633ac8ddea1c79fcc6141a7a62c5be3d94883322b
+
+# The name IS the node's identity at the agent and must equal its Kubernetes node name.
+devops_vm_agent_name: "{{ inventory_hostname }}"
+devops_vm_agent_url: https://agent.annasik.cloud
+devops_vm_agent_poll_seconds: 10
+
+# Units the agent may ask this node to restart. Empty on purpose: the agent refuses a restart on a
+# Kubernetes node (remediation/node-gate.ts vmActionRefusal), so for now the node only registers.
+# Never list etcd.service here.
+devops_vm_agent_units: []
+
+# The agent reads every node's token from Secret devops-tools/devops-vm-agent-tokens
+# (key VM_AGENT_TOKENS, "name=token,..."). Tokens are generated on the Ansible host under
+# inventory/homelab/credentials/devops-vm-agent/ (gitignored). With manage_secret the playbook
+# owns that Secret (it overwrites it) and restarts the agent when it changes.
+devops_vm_agent_manage_secret: true
+devops_vm_agent_kubectl: kubectl
+devops_vm_agent_kubeconfig: "{{ inventory_dir }}/artifacts/admin.conf"
+devops_vm_agent_namespace: devops-tools
+devops_vm_agent_secret: devops-vm-agent-tokens
+devops_vm_agent_deployment: devops-ai-agent
