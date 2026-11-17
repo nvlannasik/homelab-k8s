@@ -8,9 +8,9 @@ devops_vm_agent_state: present
 
 # Pinned to one commit of devops-ai-agent; the checksums make a changed file fail the download.
 # To upgrade: set the new commit and both sha256 values (git show <commit>:vm-agent/<file> | sha256sum).
-devops_vm_agent_commit: bce62229e331b906f737b396c0edcdb113d9db0c
+devops_vm_agent_commit: 9ad5b14b6c27e4af46e8114e265179040848e9fb
 devops_vm_agent_sha256:
-  devops-vm-agent.py: f0f389dce2efc4f0d94acf6ede7dfc74e806c034360b21ba408017f014f74c1a
+  devops-vm-agent.py: cfadb04c85f99e7b87fc1624ebd079b8dbfed3766538c3ffd156aa11fc37dbd8
   devops-vm-agent.service: 2afc04911b9d462090c40b8633ac8ddea1c79fcc6141a7a62c5be3d94883322b
 
 # The name IS the node's identity at the agent and must equal its Kubernetes node name.
