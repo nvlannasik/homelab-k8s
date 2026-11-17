@@ -82,6 +82,7 @@ Two layers on purpose:
     ├── inventory.ini                     # hosts, groups, per-host kube_vip_interface
     ├── prep-raspi.yml                    # Raspberry Pi preparation playbook (run once before init)
     ├── devops-vm-agent.yml               # devops-vm-agent on every node (section 4.11)
+    ├── containerd-godebug.yml            # containerd without post-quantum TLS (section 6.8)
     ├── templates/devops-vm-agent.conf.j2 # its /etc/devops-vm-agent.conf
     ├── group_vars/
     │   ├── all/z-homelab.yml             # node-local haproxy LB, download settings, unattended-upgrades
@@ -726,3 +727,21 @@ to SSD/USB boot is the first improvement if etcd latency becomes a problem.
   kubectl binary for this cluster.
 - If the VIP is unreachable while kube-vip runs, check that the VirtualBox VMs use a **bridged**
   adapter. Gratuitous ARP for extra IPs can fail when bridging over Wi-Fi.
+
+### 6.8 `TLS handshake timeout` pulling from quay.io / registry.k8s.io
+
+`nerdctl pull` (Kubespray's downloads) and containerd (the kubelet's pulls) failed on `master3-vm`
+with `TLS handshake timeout` against `cdn01.quay.io`, every attempt, while `curl` from the same node
+and the same pull on the other nodes worked. Go's TLS (1.24+) offers a post-quantum key share
+(X25519MLKEM768) that makes the ClientHello larger than one packet, and something on the path to
+some Akamai edges drops it; `sudo env GODEBUG=tlsmlkem=0 nerdctl -n k8s.io pull ...` succeeded at
+once. The same symptom hit every node pulling kube-state-metrics from `cdn.registry.k8s.io` on
+2026-11-14 for ~15 minutes. Fixed in two places:
+
+- `proxy_env` in `group_vars/all/z-homelab.yml` adds `GODEBUG=tlsmlkem=0,tlskyber=0`; Kubespray
+  passes it to its image downloads.
+- `containerd-godebug.yml` puts the same in a containerd drop-in, one node at a time:
+
+  ```bash
+  ansible-playbook -i $INV ../inventory/homelab/containerd-godebug.yml -b
+  ```

@@ -7,6 +7,15 @@ download_localhost: false
 
 ubuntu_stop_unattended_upgrades: true
 
+# Go's post-quantum TLS key exchange (X25519MLKEM768, on by default since Go 1.24) makes the
+# ClientHello larger than one packet, and something on the path from some nodes to some Akamai
+# edges drops it: on 2026-11-17 master3-vm's `nerdctl pull` from quay.io (cdn01.quay.io) failed
+# with "TLS handshake timeout" every time while curl (OpenSSL) and the other nodes worked, and
+# `GODEBUG=tlsmlkem=0` fixed it at once. Kubespray runs its image downloads (nerdctl) with
+# proxy_env, so it goes in there; containerd itself gets the same through
+# inventory/homelab/containerd-godebug.yml. tlskyber is the Go 1.23 name; Go ignores unknown keys.
+proxy_env: "{{ proxy_env_defaults | combine({'GODEBUG': 'tlsmlkem=0,tlskyber=0'}) }}"
+
 
 # FOR PRIVATE REGISTRY URL CONFIG
 # registry_host: "harbor.homelab.local"

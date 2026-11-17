@@ -1,0 +1,50 @@
+---
+# Turn off Go's post-quantum TLS key exchange in containerd, so the kubelet's image pulls do not
+# hit the "TLS handshake timeout" that an oversized ClientHello gets on some paths to Akamai-hosted
+# registries (quay.io, registry.k8s.io). Why: group_vars/all/z-homelab.yml (proxy_env).
+# Restarting containerd does not stop running containers; one node at a time anyway.
+#   ansible-playbook -i $INV ../inventory/homelab/containerd-godebug.yml -b
+- name: Containerd without post-quantum TLS
+  hosts: k8s_cluster
+  become: true
+  serial: 1
+  handlers:
+    - name: Restart containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+        daemon_reload: true
+      notify: Wait for the node to be Ready
+
+    - name: Wait for the node to be Ready
+      ansible.builtin.command: >-
+        kubectl --kubeconfig /etc/kubernetes/kubelet.conf get node {{ inventory_hostname }}
+        -o jsonpath={.status.conditions[?(@.type=="Ready")].status}
+      register: node_ready
+      until: node_ready.stdout == "True"
+      retries: 30
+      delay: 5
+      changed_when: false
+
+  tasks:
+    - name: Write the containerd drop-in
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/containerd.service.d/godebug.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by homelab-k8s inventory/homelab/containerd-godebug.yml
+          [Service]
+          Environment="GODEBUG=tlsmlkem=0,tlskyber=0"
+      notify: Restart containerd
+
+    - name: Apply the restart before checking
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check containerd runs with the setting  # noqa: command-instead-of-module (read-only systemctl show)
+      ansible.builtin.command: systemctl show containerd -p Environment -p ActiveState
+      register: containerd_env
+      changed_when: false
+      failed_when: >-
+        'tlsmlkem=0' not in containerd_env.stdout or 'ActiveState=active' not in containerd_env.stdout
