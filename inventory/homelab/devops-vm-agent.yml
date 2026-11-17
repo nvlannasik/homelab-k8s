@@ -9,6 +9,9 @@
   become: true
   vars:
     devops_vm_agent_raw: "https://raw.githubusercontent.com/nvlannasik/devops-ai-agent/{{ devops_vm_agent_commit }}/vm-agent"
+    devops_vm_agent_files:
+      - { file: devops-vm-agent.py, dest: /usr/local/bin/devops-vm-agent.py, mode: "0755" }
+      - { file: devops-vm-agent.service, dest: /etc/systemd/system/devops-vm-agent.service, mode: "0644" }
     devops_vm_agent_credentials: "{{ inventory_dir }}/credentials/devops-vm-agent"
     devops_vm_agent_password_opts: " length=48 chars=ascii_letters,digits"
     # Generated once per node on the Ansible host, reused on every later run.
@@ -39,7 +42,7 @@
     # --- the agent's Secret, written from the Ansible host before any node starts -------------------
     # run_once: this play keeps the default linear strategy, where it means one run for the batch.
     - name: Secret for the agent  # noqa: run-once[task]
-      when: devops_vm_agent_manage_secret and devops_vm_agent_state == 'present'
+      when: devops_vm_agent_manage_secret | bool and devops_vm_agent_state == 'present'
       run_once: true
       delegate_to: localhost
       become: false
@@ -93,24 +96,33 @@
     - name: Install
       when: devops_vm_agent_state == 'present'
       block:
-        - name: Download the script (pinned commit, checksum verified)
-          ansible.builtin.get_url:
-            url: "{{ devops_vm_agent_raw }}/devops-vm-agent.py"
-            dest: /usr/local/bin/devops-vm-agent.py
-            checksum: "sha256:{{ devops_vm_agent_sha256['devops-vm-agent.py'] }}"
-            owner: root
-            group: root
-            mode: "0755"
-          notify: Restart devops-vm-agent
+        # curl + sha256sum on the node instead of get_url: get_url of an Ansible older than ~2.14
+        # breaks on Python 3.12 (Ubuntu 24.04) with "'CustomHTTPSConnection' object has no
+        # attribute 'cert_file'". This works with any Ansible version.
+        - name: Read the installed files' checksums
+          ansible.builtin.stat:
+            path: "{{ item.dest }}"
+            checksum_algorithm: sha256
+          loop: "{{ devops_vm_agent_files }}"
+          loop_control:
+            label: "{{ item.dest }}"
+          register: devops_vm_agent_installed
 
-        - name: Download the systemd unit (pinned commit, checksum verified)
-          ansible.builtin.get_url:
-            url: "{{ devops_vm_agent_raw }}/devops-vm-agent.service"
-            dest: /etc/systemd/system/devops-vm-agent.service
-            checksum: "sha256:{{ devops_vm_agent_sha256['devops-vm-agent.service'] }}"
-            owner: root
-            group: root
-            mode: "0644"
+        - name: Download the files that differ (pinned commit, checksum verified)
+          ansible.builtin.shell: |
+            set -euo pipefail
+            tmp=$(mktemp)
+            trap 'rm -f "$tmp"' EXIT
+            curl -fsSL --retry 3 --max-time 60 {{ (devops_vm_agent_raw ~ '/' ~ item.item.file) | quote }} -o "$tmp"
+            echo "{{ devops_vm_agent_sha256[item.item.file] }}  $tmp" | sha256sum --check --quiet
+            install -o root -g root -m {{ item.item.mode }} "$tmp" {{ item.item.dest | quote }}
+          args:
+            executable: /bin/bash
+          when: item.stat.checksum | default('') != devops_vm_agent_sha256[item.item.file]
+          loop: "{{ devops_vm_agent_installed.results }}"
+          loop_control:
+            label: "{{ item.item.dest }}"
+          changed_when: true
           notify: Restart devops-vm-agent
 
         - name: Write /etc/devops-vm-agent.conf
