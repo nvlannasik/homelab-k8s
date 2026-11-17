@@ -43,3 +43,13 @@ metallb_config:
 # local-path-provisioner: default StorageClass "local-path" (hostPath under
 # /opt/local-path-provisioner on the node that first mounts the PVC). Needed by Teleport's auth PVC.
 local_path_provisioner_enabled: true
+
+# Spread API clients over the three API servers. Watches are long-lived HTTP/2 connections and
+# stay on whichever API server they first reached, so after a restart or a slow moment one server
+# collects most of them: master3-vm held 459 long-running requests vs 159 and 122 on 2026-11-17,
+# ~145Mi more API server memory on a 2GB node, and MemoryPressure. With goaway-chance each request
+# has a 0.1% chance of the server asking its client to reconnect (GOAWAY), so connections drift back
+# to an even spread through the VIP / haproxy / kubernetes Service. In-flight requests are not cut.
+# Applied by a same-version upgrade of the control plane (README 4.12).
+kube_kubeadm_apiserver_extra_args:
+  goaway-chance: "0.001"
