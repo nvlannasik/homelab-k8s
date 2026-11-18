@@ -1,0 +1,19 @@
+---
+# Memory the kubelet holds back from pods on the control planes, sized from what runs outside pods.
+#
+# Kubespray's defaults (kube 256Mi + system 512Mi, + the 100Mi hard eviction threshold) leave
+# ~1.07Gi for pods on these 2GB machines, and the control plane's own static pods (kube-apiserver
+# 540-690Mi, the controller-manager leader ~110Mi, calico-node, kube-proxy, kube-scheduler, ...)
+# need ~0.85-1.12Gi. The kubelet compares pod usage with allocatable (allocatableMemory.available),
+# so a node went MemoryPressure with ~400Mi still free: master2-vm on 2026-11-18, pods 1105Mi
+# against 1126100Ki allocatable, 94Mi left under the 100Mi threshold.
+#
+# Measured outside pods on 2026-11-18 (kubelet stats/summary, node working set minus pods):
+# master1-raspi 468Mi, master2-vm 459Mi, master3-vm 553Mi — etcd (systemd, 170-360Mi), containerd
+# ~115Mi, kubelet ~80Mi, journald/multipathd/sshd/devops-vm-agent. 192 + 448 = 640Mi still covers the
+# largest of those with ~90Mi to spare, and gives pods 128Mi more. The whole-node threshold
+# (memory.available < 100Mi) still protects the host if something outside pods grows.
+#
+# Applied with: facts.yml, then cluster.yml --tags kubelet --limit kube_control_plane (README 4.13).
+kube_memory_reserved: 192Mi
+system_memory_reserved: 448Mi
