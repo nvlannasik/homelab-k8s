@@ -5,3 +5,7 @@ url = {{ devops_vm_agent_url }}
 token = {{ devops_vm_agent_token }}
 units = {{ devops_vm_agent_units | join(' ') }}
 poll_seconds = {{ devops_vm_agent_poll_seconds }}
+{% if devops_vm_agent_cluster | default('') %}
+cluster = {{ devops_vm_agent_cluster }}
+node = {{ devops_vm_agent_node | default(devops_vm_agent_name) }}
+{% endif %}

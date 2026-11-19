@@ -8,13 +8,19 @@ devops_vm_agent_state: present
 
 # Pinned to one commit of devops-ai-agent; the checksums make a changed file fail the download.
 # To upgrade: set the new commit and both sha256 values (git show <commit>:vm-agent/<file> | sha256sum).
-devops_vm_agent_commit: 3c27d44be156b29c1a5f7c61e222996f3d4e5018
+devops_vm_agent_commit: 21707fb04baaf0eaa7a4ce5317d11db882c567f9
 devops_vm_agent_sha256:
-  devops-vm-agent.py: ef80a85830871c4f349b368ff336d096b79a9ef36b543ec51f62e2325a1234be
+  devops-vm-agent.py: a29d026d9bb59d28fc456ebc7ba6c3e160fe768beb1a02f8f486fc901fcbedf8
   devops-vm-agent.service: 2afc04911b9d462090c40b8633ac8ddea1c79fcc6141a7a62c5be3d94883322b
 
 # The name IS the node's identity at the agent and must equal its Kubernetes node name.
 devops_vm_agent_name: "{{ inventory_hostname }}"
+# Where the host sits (vm-agent 4+): the cluster as the devops agent names it (MCP_LOCAL_CLUSTER on
+# the agent is `dev` for this cluster) and the Kubernetes node name. The agent's Hosts pages group by
+# them and join them to Kubernetes. If another cluster also has a node with this name, give the
+# token a different `devops_vm_agent_name` and keep `devops_vm_agent_node` the Kubernetes name.
+devops_vm_agent_cluster: dev
+devops_vm_agent_node: "{{ inventory_hostname }}"
 # The LAN, not the public host: ingress-nginx's MetalLB IP, where a host-less /vm/ rule
 # (gitops-devops-ai-manifest ingress-vm.yaml) reaches the agent without Cloudflare. Plain HTTP: the
 # token is unencrypted on the LAN (https on that IP serves ingress-nginx's fake certificate).
